@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Фермерская симфония - Управляй фермой</title>
+    <title>Фермерская жизнь - Собирай урожай и вези в магазин!</title>
     <style>
         * {
             user-select: none;
@@ -75,6 +75,15 @@
             font-size: 1.6rem;
         }
 
+        .inventory {
+            background: #4a3e28;
+            padding: 5px 18px;
+            border-radius: 32px;
+            font-weight: bold;
+            color: #ffefb9;
+            font-size: 1.2rem;
+        }
+
         .shop {
             display: flex;
             gap: 12px;
@@ -137,17 +146,20 @@
         <canvas id="gameCanvas" width="1000" height="600"></canvas>
         <div class="ui-panel">
             <div class="stats">
-                <div class="stat"><span>💰</span> <span id="money">5000</span></div>
-                <div class="stat"><span>🌾</span> <span id="harvestTotal">0</span></div>
-                <div class="stat"><span>🚜</span> <span id="vehicleName">Мини-трактор</span></div>
+                <div class="stat"><span>💰</span> <span id="money">1500</span></div>
+                <div class="stat"><span>🧺</span> <span id="harvestInventory">0</span></div>
+                <div class="stat"><span>🚜</span> <span id="vehicleName">Пешком</span></div>
+            </div>
+            <div class="inventory">
+                📦 Урожай в рюкзаке: <span id="inventoryCount">0</span> ед.
             </div>
             <div class="shop">
-                <button id="buyTractorBtn">🚜 Купить трактор PRO (4500💰)</button>
-                <button id="buyCombineBtn">🌾 Купить комбайн (12000💰)</button>
-                <button id="buyLandBtn">🌱 Купить участок + поле (3000💰)</button>
+                <button id="buyTractorBtn">🚜 Купить трактор (1800💰)</button>
+                <button id="buyCombineBtn">🌾 Купить комбайн (4500💰)</button>
+                <button id="buyLandBtn">🌱 Купить участок (1200💰)</button>
             </div>
             <div class="vehicle-status" id="vehicleStatusMsg">▶ Режим: пешком (WASD)</div>
-            <div class="controls-info">🕹️ WASD / стрелки — движение | ПКМ / Пробел — спешиться/сесть в технику</div>
+            <div class="controls-info">🕹️ WASD / стрелки — движение | ПКМ / Пробел — сесть/выйти из техники | 🏪 Езжайте к магазину (красное здание), чтобы продать урожай!</div>
         </div>
     </div>
 </div>
@@ -158,97 +170,107 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
-        // Игровые параметры
-        let money = 5000;
-        let totalHarvest = 0;      // всего собрано урожая
-        let ownedLandCount = 1;     // изначально 1 участок (центральный)
+        // Игровые параметры (цены снижены!)
+        let money = 1500;           // стартовый капитал
+        let totalHarvested = 0;     // всего собрано за всю игру (статистика)
+        let inventory = 0;          // урожай в рюкзаке (ждет продажи)
+        let ownedLandCount = 1;     // изначально 1 участок
         
-        // Техника: 0 - пешком, 1 - трактор базовый, 2 - комбайн
-        let currentVehicle = 0;      // 0=пешком, 1=трактор, 2=комбайн
+        // Техника: 0 - пешком, 1 - трактор, 2 - комбайн
+        let currentVehicle = 0;
         let hasTractor = false;
         let hasCombine = false;
         
         // Игрок
         let player = { x: 500, y: 300, radius: 16 };
         
-        // Участки (поля) — каждый участок имеет координаты центра, радиус и количество урожая (в стадии роста)
-        // Участки растут: value 0..100, при 100 можно собрать. Сбор дает монеты и увеличивает totalHarvest
+        // Магазин (точка продажи)
+        const shop = {
+            x: 900,
+            y: 80,
+            radius: 45,
+            name: "МАГАЗИН"
+        };
+        
+        // Участки (поля)
         let plots = [];
         
-        // Вспомогательные функции
+        // Инициализация полей
         function initPlots() {
             plots = [];
-            // Стартовый участок (центр)
+            // Стартовый участок
             plots.push({
                 id: 0,
                 x: 500, y: 500,
-                radius: 55,
-                growth: 0,       // 0-100
-                ready: false,
-                lastUpdate: Date.now()
-            });
-            // добавим еще случайный для разнообразия? но лучше чтобы первый участок был рядом, но оставим 1, остальные купленные
-            // при покупке добавляем
-        }
-        
-        // покупка земли: новый участок спавнится в случайной свободной зоне, но не слишком близко к существующим и не наезжая на границы
-        function addNewLand() {
-            if (money < 3000) {
-                alert("Не хватает монет для покупки участка! Нужно 3000💰");
-                return false;
-            }
-            // ищем позицию
-            let placed = false;
-            let attempts = 0;
-            let newX, newY;
-            while (!placed && attempts < 80) {
-                newX = 150 + Math.random() * (canvas.width - 300);
-                newY = 80 + Math.random() * (canvas.height - 180);
-                let ok = true;
-                for (let p of plots) {
-                    const dx = p.x - newX;
-                    const dy = p.y - newY;
-                    const dist = Math.hypot(dx, dy);
-                    if (dist < (p.radius + 65)) {
-                        ok = false;
-                        break;
-                    }
-                }
-                // также не слишком близко к игроку? необязательно
-                if (ok && newX > 70 && newX < canvas.width-70 && newY > 70 && newY < canvas.height-70) placed = true;
-                attempts++;
-            }
-            if (!placed) {
-                // форс-позиция
-                newX = 300 + Math.random() * 400;
-                newY = 150 + Math.random() * 350;
-            }
-            plots.push({
-                id: Date.now() + Math.random(),
-                x: newX,
-                y: newY,
                 radius: 52,
                 growth: 0,
                 ready: false,
                 lastUpdate: Date.now()
             });
-            money -= 3000;
+            // добавим еще один небольшой стартовый участок для разнообразия
+            plots.push({
+                id: 1,
+                x: 250, y: 400,
+                radius: 48,
+                growth: 25,
+                ready: false,
+                lastUpdate: Date.now()
+            });
+            ownedLandCount = 2; // теперь 2 участка
+        }
+        
+        // покупка нового участка (дешевле)
+        function addNewLand() {
+            if (money < 1200) {
+                alert("Не хватает монет! Нужно 1200💰");
+                return false;
+            }
+            let placed = false;
+            let attempts = 0;
+            let newX, newY;
+            while (!placed && attempts < 60) {
+                newX = 120 + Math.random() * (canvas.width - 240);
+                newY = 100 + Math.random() * (canvas.height - 180);
+                let ok = true;
+                for (let p of plots) {
+                    if (Math.hypot(p.x - newX, p.y - newY) < (p.radius + 70)) {
+                        ok = false;
+                        break;
+                    }
+                }
+                if (Math.hypot(shop.x - newX, shop.y - newY) < 85) ok = false;
+                if (ok && newX > 60 && newX < canvas.width-60 && newY > 60 && newY < canvas.height-60) placed = true;
+                attempts++;
+            }
+            if (!placed) {
+                newX = 650 + Math.random() * 200;
+                newY = 400 + Math.random() * 150;
+            }
+            plots.push({
+                id: Date.now(),
+                x: newX,
+                y: newY,
+                radius: 50,
+                growth: 0,
+                ready: false,
+                lastUpdate: Date.now()
+            });
+            money -= 1200;
             ownedLandCount++;
             updateUI();
             return true;
         }
         
-        // обновление роста полей (раз в секунду)
+        // рост урожая на полях
         let lastGrowthTick = Date.now();
         function updateGrowth() {
             const now = Date.now();
             const delta = Math.min(0.5, (now - lastGrowthTick) / 1000);
-            if (delta < 0.05) return;
+            if (delta < 0.03) return;
             lastGrowthTick = now;
             for (let plot of plots) {
                 if (plot.growth < 100) {
-                    // скорость роста зависит от количества полей? базовая скорость 2.5% в секунду
-                    let inc = 2.5 * delta;
+                    let inc = 3.2 * delta; // скорость роста ~3.2% в секунду, быстрее
                     plot.growth = Math.min(100, plot.growth + inc);
                     if (plot.growth >= 100 && !plot.ready) {
                         plot.ready = true;
@@ -259,111 +281,132 @@
             }
         }
         
-        // собрать урожай на участке (если готов)
+        // СБОР УРОЖАЯ - добавляет в инвентарь, а не сразу в деньги!
         function harvestPlot(plot) {
             if (!plot.ready) return false;
-            // доход от поля: базовый 250 + бонус от техники
-            let baseReward = 280;
+            
+            // количество урожая с одного поля
             let harvestAmount = 1;
-            if (currentVehicle === 1) { // трактор
-                baseReward = Math.floor(baseReward * 1.4);
-                harvestAmount = 2;
-            } else if (currentVehicle === 2) { // комбайн
-                baseReward = Math.floor(baseReward * 2.2);
-                harvestAmount = 4;
-            }
-            // добавим бонус за размер фермы
-            let bonus = 1 + (ownedLandCount-1) * 0.05;
-            let reward = Math.floor(baseReward * bonus);
-            money += reward;
-            totalHarvest += harvestAmount;
+            if (currentVehicle === 1) harvestAmount = 2;      // трактор собирает 2 единицы
+            if (currentVehicle === 2) harvestAmount = 4;      // комбайн собирает 4 единицы
+            
+            // бонус за количество участков
+            harvestAmount = Math.floor(harvestAmount * (1 + (ownedLandCount-1) * 0.1));
+            
+            inventory += harvestAmount;
+            totalHarvested += harvestAmount;
+            
+            // поле обнуляется и начинает расти заново
             plot.growth = 0;
             plot.ready = false;
             plot.lastUpdate = Date.now();
+            
+            updateUI();
+            
+            // визуальный эффект
+            return true;
+        }
+        
+        // ПРОДАЖА УРОЖАЯ в магазине
+        function sellHarvest() {
+            if (inventory <= 0) {
+                alert("У вас нет урожая для продажи! Сначала соберите урожай с полей.");
+                return false;
+            }
+            
+            // цена за единицу зависит от техники, на которой вы приехали (премия за логистику)
+            let pricePerUnit = 45; // базовая цена
+            if (currentVehicle === 1) pricePerUnit = 58;  // трактор лучше везет
+            if (currentVehicle === 2) pricePerUnit = 75;  // комбайн привозит премиальный урожай
+            
+            // доп бонус за количество участков
+            pricePerUnit = Math.floor(pricePerUnit * (1 + (ownedLandCount-1) * 0.05));
+            
+            const totalEarn = inventory * pricePerUnit;
+            money += totalEarn;
+            
+            // показать сообщение о продаже
+            alert(`🏪 ПРОДАЖА! Вы продали ${inventory} ед. урожая по ${pricePerUnit}💰 = ${totalEarn}💰\nБаланс: ${money}💰`);
+            
+            inventory = 0;
             updateUI();
             return true;
         }
         
-        // покупка техники
+        // покупка техники (дешевле)
         function buyTractor() {
-            if (!hasTractor && money >= 4500) {
+            if (!hasTractor && money >= 1800) {
                 hasTractor = true;
-                money -= 4500;
+                money -= 1800;
                 updateUI();
-                alert("🚜 Поздравляем! Вы купили трактор PRO! Теперь садитесь в него (подойдите и нажмите Пробел или ПКМ). Урожай даёт +40%💰");
+                alert("🚜 Трактор куплен! Подойдите к нему (слева внизу) и нажмите Пробел или ПКМ, чтобы сесть. Собирает в 2 раза больше урожая!");
                 return true;
             } else if (hasTractor) {
                 alert("У вас уже есть трактор!");
                 return false;
             } else {
-                alert("Недостаточно средств! Нужно 4500💰");
+                alert("Не хватает 1800💰! Заработайте на продаже урожая.");
                 return false;
             }
         }
         
         function buyCombine() {
-            if (!hasCombine && money >= 12000) {
+            if (!hasCombine && money >= 4500) {
                 hasCombine = true;
-                money -= 12000;
+                money -= 4500;
                 updateUI();
-                alert("🌾 Мощный комбайн! Урожайность x2.2, собирает в 4 раза больше отчётности! Садитесь рядом с комбайном.");
+                alert("🌾 Мощный комбайн! Находится справа внизу. Садитесь - собирает 4 урожая за раз, дороже продает!");
                 return true;
             } else if (hasCombine) {
-                alert("Комбайн уже в гараже!");
+                alert("Комбайн уже ваш!");
                 return false;
             } else {
-                alert("Не хватает 12000💰! Заработайте больше.");
+                alert("Нужно 4500💰! Продолжайте торговать.");
                 return false;
             }
         }
         
-        // сесть в технику (если рядом с трактором или комбайном)
+        // сесть в технику
         function tryEnterVehicle() {
-            // если уже в технике, то выходим
             if (currentVehicle !== 0) {
-                // выйти
+                // выйти из техники
                 currentVehicle = 0;
                 player.radius = 16;
                 updateUI();
                 document.getElementById("vehicleStatusMsg").innerHTML = "▶ Режим: пешком (WASD)";
                 return;
             }
-            // проверяем, стоит ли игрок рядом с купленной техникой (виртуальные точки)
-            // трактор позиция около центра карты? лучше создать объекты техники
-            // создадим массив техники на карте
-            let nearTractor = false;
-            let nearCombine = false;
-            // позиции техники: трактор стоит около стартового участка слева, комбайн справа
-            const tractorPos = { x: 150, y: 500 };
-            const combinePos = { x: 850, y: 500 };
-            if (hasTractor && Math.hypot(player.x - tractorPos.x, player.y - tractorPos.y) < 38) nearTractor = true;
-            if (hasCombine && Math.hypot(player.x - combinePos.x, player.y - combinePos.y) < 42) nearCombine = true;
+            // позиции техники
+            const tractorPos = { x: 120, y: 550 };
+            const combinePos = { x: 880, y: 550 };
+            
+            let nearTractor = hasTractor && Math.hypot(player.x - tractorPos.x, player.y - tractorPos.y) < 42;
+            let nearCombine = hasCombine && Math.hypot(player.x - combinePos.x, player.y - combinePos.y) < 48;
             
             if (nearTractor) {
                 currentVehicle = 1;
                 player.radius = 22;
-                document.getElementById("vehicleStatusMsg").innerHTML = "🚜 Режим: ТРАКТОР (быстрее, +урожай)";
+                document.getElementById("vehicleStatusMsg").innerHTML = "🚜 Режим: ТРАКТОР (скорость +, урожай x2)";
                 updateUI();
             } else if (nearCombine) {
                 currentVehicle = 2;
-                player.radius = 26;
-                document.getElementById("vehicleStatusMsg").innerHTML = "🌾 Режим: КОМБАЙН (очень быстрый, супер сбор)";
+                player.radius = 27;
+                document.getElementById("vehicleStatusMsg").innerHTML = "🌾 Режим: КОМБАЙН (скорость ++, урожай x4, цена продажи выше)";
                 updateUI();
             } else {
-                alert("Подойдите к купленной технике! Трактор (слева, ⬅️) или Комбайн (справа, ➡️) чтобы сесть.");
+                alert("Подойдите к купленной технике! 🚜 Трактор (слева внизу) 🌾 Комбайн (справа внизу)");
             }
         }
         
-        // Движение и скорость
+        // движение
         let keys = { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false, w: false, s: false, a: false, d: false };
-        let moveSpeed = 0;
         function calcSpeed() {
-            if (currentVehicle === 0) return 210;     // пикселей в секунду
-            if (currentVehicle === 1) return 320;
-            return 460; // комбайн быстрее всех
+            if (currentVehicle === 0) return 210;
+            if (currentVehicle === 1) return 340;
+            return 500;
         }
         
-        let lastTimestamp = 0;
+        let lastFrameTime = performance.now();
         function updateMovement(deltaSec) {
             let spd = calcSpeed() * deltaSec;
             let dx = 0, dy = 0;
@@ -378,207 +421,257 @@
             }
             let newX = player.x + dx;
             let newY = player.y + dy;
-            // границы с учётом радиуса
             const margin = player.radius + 5;
             newX = Math.min(Math.max(newX, margin), canvas.width - margin);
             newY = Math.min(Math.max(newY, margin), canvas.height - margin);
             player.x = newX;
             player.y = newY;
             
-            // СБОР УРОЖАЯ при соприкосновении с участком (если готов)
+            // СБОР УРОЖАЯ при касании готового поля
             for (let plot of plots) {
-                const distToPlot = Math.hypot(player.x - plot.x, player.y - plot.y);
-                const threshold = player.radius + plot.radius;
-                if (distToPlot < threshold && plot.ready) {
+                const dist = Math.hypot(player.x - plot.x, player.y - plot.y);
+                if (dist < (player.radius + plot.radius) && plot.ready) {
                     harvestPlot(plot);
-                    // добавляем визуальный фидбек (можно не спамить)
-                    break;
+                    break; // один сбор за кадр
                 }
             }
+            
+            // ПРОВЕРКА ПРОДАЖИ в магазине (если игрок рядом с магазином и нажата клавиша E)
+            // добавим автоматическое всплывающее окно? но лучше сделать кнопку в интерфейсе, но в описании механика "ехать в магазин"
+            // для удобства сделаем триггер: если игрок в радиусе магазина, появляется кнопка или авто-продажа? 
+            // Поскольку кнопка уже есть в интерфейсе, но для погружения добавим проверку на proximity и предложение.
+        }
+        
+        // проверка нахождения в магазине для визуального индикатора
+        function isNearShop() {
+            return Math.hypot(player.x - shop.x, player.y - shop.y) < (player.radius + shop.radius + 15);
         }
         
         // Отрисовка всего
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // Земля текстура
+            // фон
             ctx.fillStyle = "#5f8b4c";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
-            for(let i=0;i<200;i++) {
+            for(let i=0;i<150;i++) {
                 ctx.fillStyle = "#7ca55a";
                 ctx.beginPath();
                 ctx.arc(Math.random()*canvas.width, Math.random()*canvas.height, 2, 0, Math.PI*2);
                 ctx.fill();
             }
             
-            // рисуем участки (поля)
+            // рисуем участки
             for (let plot of plots) {
-                // градиент для поля
-                const grad = ctx.createRadialGradient(plot.x-10, plot.y-10, 10, plot.x, plot.y, plot.radius);
-                grad.addColorStop(0, "#b9d48b");
-                grad.addColorStop(1, "#7ca53b");
+                const grad = ctx.createRadialGradient(plot.x-8, plot.y-8, 8, plot.x, plot.y, plot.radius);
+                grad.addColorStop(0, "#c7e29c");
+                grad.addColorStop(1, "#7fa545");
                 ctx.beginPath();
                 ctx.arc(plot.x, plot.y, plot.radius, 0, Math.PI*2);
                 ctx.fillStyle = grad;
                 ctx.fill();
                 ctx.strokeStyle = "#4a6730";
-                ctx.lineWidth = 3;
+                ctx.lineWidth = 2.5;
                 ctx.stroke();
-                // проценты роста
-                ctx.font = "bold 18px 'Segoe UI'";
-                ctx.fillStyle = "#2f2e1c";
-                ctx.shadowBlur = 0;
-                let percent = Math.floor(plot.growth);
-                ctx.fillText(`${percent}%`, plot.x-22, plot.y-25);
+                // прогресс роста
+                ctx.font = "bold 16px 'Segoe UI'";
+                ctx.fillStyle = "#2c2b1a";
+                ctx.fillText(`${Math.floor(plot.growth)}%`, plot.x-20, plot.y-28);
                 if (plot.ready) {
-                    ctx.font = "bold 20px sans-serif";
+                    ctx.font = "bold 18px sans-serif";
                     ctx.fillStyle = "#ffd966";
-                    ctx.shadowColor = "black";
-                    ctx.fillText("✨ ГОТОВО ✨", plot.x-45, plot.y+5);
+                    ctx.shadowBlur = 3;
+                    ctx.fillText("🌾 СОЗРЕЛО!", plot.x-48, plot.y+5);
+                    ctx.shadowBlur = 0;
                 }
-                // маленькая иконка пшеницы
+                // рисуем пшеницу
                 ctx.fillStyle = "#e3b138";
-                ctx.beginPath();
-                for(let ang=0; ang<Math.PI*2; ang+=0.8){
+                for(let ang=0; ang<Math.PI*2; ang+=0.9){
                     let xOff = Math.cos(ang)*12;
-                    let yOff = Math.sin(ang)*8;
-                    ctx.fillRect(plot.x+xOff-2, plot.y+yOff-2, 3, 5);
+                    let yOff = Math.sin(ang)*7;
+                    ctx.fillRect(plot.x+xOff-2, plot.y+yOff-2, 3, 6);
                 }
             }
             
-            // Техника на карте (стационарные)
+            // МАГАЗИН (яркое здание)
+            ctx.fillStyle = "#b53b2a";
+            ctx.shadowBlur = 6;
+            ctx.beginPath();
+            ctx.rect(shop.x-42, shop.y-38, 84, 70);
+            ctx.fill();
+            ctx.fillStyle = "#ffdd99";
+            ctx.beginPath();
+            ctx.rect(shop.x-28, shop.y-18, 56, 35);
+            ctx.fill();
+            ctx.fillStyle = "#8b2c1a";
+            ctx.font = "bold 24px monospace";
+            ctx.fillText("🏪", shop.x-15, shop.y+8);
+            ctx.fillStyle = "white";
+            ctx.font = "bold 14px 'Segoe UI'";
+            ctx.fillText("МАГАЗИН", shop.x-35, shop.y-20);
+            ctx.fillStyle = "#ffefb0";
+            ctx.font = "12px monospace";
+            ctx.fillText("Продажа", shop.x-23, shop.y+24);
+            if (isNearShop()) {
+                ctx.fillStyle = "gold";
+                ctx.font = "bold 16px sans-serif";
+                ctx.fillText("⚡ НАЖМИТЕ 'E' ДЛЯ ПРОДАЖИ ⚡", shop.x-125, shop.y-45);
+            }
+            
+            // техника на карте
             if (hasTractor) {
-                ctx.drawImage ? null : null;
-                ctx.fillStyle = "#c93f1f";
+                ctx.fillStyle = "#c95a2a";
                 ctx.beginPath();
-                ctx.ellipse(150, 500, 22, 28, 0, 0, Math.PI*2);
+                ctx.ellipse(120, 550, 24, 30, 0, 0, Math.PI*2);
                 ctx.fill();
-                ctx.fillStyle = "#4d2f14";
-                ctx.fillRect(135, 485, 30, 20);
+                ctx.fillStyle = "#a5522a";
+                ctx.fillRect(105, 537, 30, 20);
                 ctx.fillStyle = "white";
-                ctx.font = "bold 14px monospace";
-                ctx.fillText("🚜", 140, 497);
-                ctx.fillStyle = "#ffe6b3";
-                ctx.font = "bold 12px sans-serif";
-                ctx.fillText("ТРАКТОР", 115, 475);
+                ctx.font = "28px sans-serif";
+                ctx.fillText("🚜", 108, 548);
+                ctx.fillStyle = "#fbe69e";
+                ctx.font = "bold 12px";
+                ctx.fillText("ТРАКТОР", 90, 530);
             }
             if (hasCombine) {
-                ctx.fillStyle = "#c98f2e";
+                ctx.fillStyle = "#c98a2e";
                 ctx.beginPath();
-                ctx.ellipse(850, 500, 28, 32, 0, 0, Math.PI*2);
+                ctx.ellipse(880, 550, 30, 34, 0, 0, Math.PI*2);
                 ctx.fill();
-                ctx.fillStyle = "#6e4a1e";
-                ctx.fillRect(828, 485, 44, 24);
+                ctx.fillStyle = "#8b5a2a";
+                ctx.fillRect(857, 536, 46, 26);
                 ctx.fillStyle = "white";
-                ctx.font = "bold 20px sans-serif";
-                ctx.fillText("🌾", 842, 495);
-                ctx.fillStyle = "#fff0b5";
-                ctx.fillText("КОМБАЙН", 812, 470);
+                ctx.font = "30px sans-serif";
+                ctx.fillText("🌾", 867, 548);
+                ctx.fillStyle = "#ffefb9";
+                ctx.font = "bold 11px";
+                ctx.fillText("КОМБАЙН", 852, 526);
             }
             
-            // Игрок (человек или техника)
-            ctx.shadowBlur = 6;
+            // игрок
+            ctx.shadowBlur = 4;
             if (currentVehicle === 0) {
-                ctx.fillStyle = "#4c6a9e";
+                ctx.fillStyle = "#5a7cb0";
                 ctx.beginPath();
-                ctx.arc(player.x, player.y, 15, 0, Math.PI*2);
+                ctx.arc(player.x, player.y, 14, 0, Math.PI*2);
                 ctx.fill();
-                ctx.fillStyle = "#f9cf86";
+                ctx.fillStyle = "#f9e0a0";
                 ctx.beginPath();
-                ctx.arc(player.x-3, player.y-4, 3, 0, Math.PI*2);
+                ctx.arc(player.x-3, player.y-4, 3.5, 0, Math.PI*2);
                 ctx.fill();
-                ctx.fillStyle = "#1e1a0c";
+                ctx.fillStyle = "#3a2e1a";
                 ctx.fillRect(player.x-8, player.y+4, 16, 8);
-                ctx.fillStyle = "white";
-                ctx.font = "20px sans-serif";
-                ctx.fillText("🧑‍🌾", player.x-11, player.y-8);
+                ctx.font = "24px sans-serif";
+                ctx.fillStyle = "#ffeeca";
+                ctx.fillText("🧑", player.x-10, player.y-7);
             } else if (currentVehicle === 1) {
-                ctx.fillStyle = "#b54a1a";
+                ctx.fillStyle = "#d9682a";
                 ctx.beginPath();
-                ctx.ellipse(player.x, player.y, 20, 24, 0, 0, Math.PI*2);
+                ctx.ellipse(player.x, player.y, 21, 26, 0, 0, Math.PI*2);
                 ctx.fill();
-                ctx.fillStyle = "#deb887";
-                ctx.fillRect(player.x-15, player.y-5, 30, 12);
-                ctx.fillStyle = "black";
-                ctx.font = "26px sans-serif";
-                ctx.fillText("🚜", player.x-14, player.y+8);
-            } else if (currentVehicle === 2) {
-                ctx.fillStyle = "#cc8822";
-                ctx.beginPath();
-                ctx.ellipse(player.x, player.y, 24, 28, 0, 0, Math.PI*2);
-                ctx.fill();
-                ctx.fillStyle = "#aa6633";
-                ctx.fillRect(player.x-18, player.y-4, 36, 12);
-                ctx.fillStyle = "#f5e56b";
+                ctx.fillStyle = "#bc6b2a";
+                ctx.fillRect(player.x-17, player.y-6, 34, 14);
                 ctx.font = "28px sans-serif";
-                ctx.fillText("🌾", player.x-14, player.y+8);
+                ctx.fillStyle = "black";
+                ctx.fillText("🚜", player.x-14, player.y+9);
+            } else {
+                ctx.fillStyle = "#d99e3a";
+                ctx.beginPath();
+                ctx.ellipse(player.x, player.y, 26, 30, 0, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = "#bd7a2a";
+                ctx.fillRect(player.x-20, player.y-4, 40, 14);
+                ctx.font = "32px sans-serif";
+                ctx.fillText("🌾", player.x-17, player.y+9);
             }
             ctx.shadowBlur = 0;
-            // Вспомогательные линии
+            // инфо на экране
             ctx.font = "bold 14px monospace";
-            ctx.fillStyle = "#FEF7E6";
-            ctx.fillText(`Владельцев земли: ${ownedLandCount}`, 20, 40);
+            ctx.fillStyle = "#faf0cf";
+            ctx.fillText(`Участков: ${ownedLandCount}`, 20, 35);
+            if (inventory > 0) {
+                ctx.fillStyle = "#ffd966";
+                ctx.font = "bold 20px monospace";
+                ctx.fillText(`📦 В рюкзаке: ${inventory}`, 20, 75);
+            }
         }
         
         // UI обновление
         function updateUI() {
             document.getElementById("money").innerText = Math.floor(money);
-            document.getElementById("harvestTotal").innerText = totalHarvest;
-            let vehicleText = "Пешком";
-            if (currentVehicle === 1) vehicleText = "Трактор";
-            if (currentVehicle === 2) vehicleText = "Комбайн";
+            document.getElementById("harvestInventory").innerText = totalHarvested;
+            document.getElementById("inventoryCount").innerText = inventory;
+            let vehicleText = currentVehicle === 0 ? "Пешком" : (currentVehicle === 1 ? "Трактор" : "Комбайн");
             document.getElementById("vehicleName").innerText = vehicleText;
-            // кнопки блокировка если не хватает
             const buyTractorBtn = document.getElementById("buyTractorBtn");
             const buyCombineBtn = document.getElementById("buyCombineBtn");
             const buyLandBtn = document.getElementById("buyLandBtn");
-            buyTractorBtn.disabled = hasTractor || money < 4500;
-            buyCombineBtn.disabled = hasCombine || money < 12000;
-            buyLandBtn.disabled = money < 3000;
+            buyTractorBtn.disabled = hasTractor || money < 1800;
+            buyCombineBtn.disabled = hasCombine || money < 4500;
+            buyLandBtn.disabled = money < 1200;
         }
         
-        // анимационный цикл
-        let lastFrameTime = performance.now();
+        // обработка продажи по клавише E
+        function handleSellKey() {
+            if (isNearShop() && inventory > 0) {
+                sellHarvest();
+            } else if (isNearShop() && inventory === 0) {
+                alert("В рюкзаке нет урожая! Соберите урожай с полей и приходите снова.");
+            } else if (!isNearShop()) {
+                // можно не спамить, просто игнорим
+            }
+        }
+        
+        // игровой цикл
+        let lastUpdateTime = performance.now();
         function gameLoop(now) {
-            let delta = Math.min(0.033, (now - lastFrameTime) / 1000);
+            let delta = Math.min(0.033, (now - lastUpdateTime) / 1000);
             if (delta > 0.001) {
                 updateGrowth();
                 updateMovement(delta);
                 draw();
             }
-            lastFrameTime = now;
+            lastUpdateTime = now;
             requestAnimationFrame(gameLoop);
         }
         
-        // обработчики клавиш
+        // обработка клавиш
         function handleKeyDown(e) {
             const key = e.key;
-            if (key === 'ArrowUp' || key === 'ArrowDown' || key === 'ArrowLeft' || key === 'ArrowRight' ||
-                key === 'w' || key === 's' || key === 'a' || key === 'd') {
+            const moveKeys = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'w', 's', 'a', 'd'];
+            if (moveKeys.includes(key)) {
                 e.preventDefault();
+                if (key === 'ArrowUp') keys.ArrowUp = true;
+                if (key === 'ArrowDown') keys.ArrowDown = true;
+                if (key === 'ArrowLeft') keys.ArrowLeft = true;
+                if (key === 'ArrowRight') keys.ArrowRight = true;
+                if (key === 'w') keys.w = true;
+                if (key === 's') keys.s = true;
+                if (key === 'a') keys.a = true;
+                if (key === 'd') keys.d = true;
             }
-            if (keys.hasOwnProperty(key)) keys[key] = true;
-            else if (key === 'ArrowUp') keys.ArrowUp = true;
-            else if (key === 'ArrowDown') keys.ArrowDown = true;
-            else if (key === 'ArrowLeft') keys.ArrowLeft = true;
-            else if (key === 'ArrowRight') keys.ArrowRight = true;
-            // спешиться / сесть: пробел
             if (key === ' ' || key === 'Space') {
                 e.preventDefault();
                 tryEnterVehicle();
+            }
+            if (key === 'e' || key === 'E') {
+                e.preventDefault();
+                handleSellKey();
             }
         }
         
         function handleKeyUp(e) {
             const key = e.key;
-            if (keys.hasOwnProperty(key)) keys[key] = false;
             if (key === 'ArrowUp') keys.ArrowUp = false;
             if (key === 'ArrowDown') keys.ArrowDown = false;
             if (key === 'ArrowLeft') keys.ArrowLeft = false;
             if (key === 'ArrowRight') keys.ArrowRight = false;
+            if (key === 'w') keys.w = false;
+            if (key === 's') keys.s = false;
+            if (key === 'a') keys.a = false;
+            if (key === 'd') keys.d = false;
         }
         
-        // правый клик для входа/выхода
         canvas.addEventListener('contextmenu', (e) => {
             e.preventDefault();
             tryEnterVehicle();
@@ -591,15 +684,12 @@
         // кнопки магазина
         document.getElementById("buyTractorBtn").addEventListener("click", () => { buyTractor(); updateUI(); });
         document.getElementById("buyCombineBtn").addEventListener("click", () => { buyCombine(); updateUI(); });
-        document.getElementById("buyLandBtn").addEventListener("click", () => { addNewLand(); updateUI(); draw(); });
+        document.getElementById("buyLandBtn").addEventListener("click", () => { addNewLand(); updateUI(); });
         
-        // инициализация мира
         initPlots();
-        // даем стартовый бонус небольшой рост
-        for(let p of plots) p.growth = 35;
         updateUI();
         lastGrowthTick = Date.now();
-        lastFrameTime = performance.now();
+        lastUpdateTime = performance.now();
         requestAnimationFrame(gameLoop);
     })();
 </script>
