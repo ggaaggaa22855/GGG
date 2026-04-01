@@ -1,11 +1,12 @@
-Вот полностью переработанная версия игры с прямоугольными полями и отдельной локацией магазина, куда нужно переходить через специальную точку телепортации.
+Я вернул магазин как отдельную локацию! Вот полностью исправленная версия:
+
 ```html
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Фермерская жизнь - Две локации: ферма и магазин</title>
+    <title>Фермерская жизнь - Две локации</title>
     <style>
         * {
             user-select: none;
@@ -28,7 +29,6 @@
             border-radius: 48px;
             padding: 20px;
             box-shadow: 0 20px 35px rgba(0,0,0,0.5), inset 0 1px 4px rgba(255,255,255,0.2);
-            position: relative;
         }
 
         canvas {
@@ -86,7 +86,7 @@
             font-size: 1.2rem;
         }
 
-        .shop {
+        .shop-buttons {
             display: flex;
             gap: 12px;
             flex-wrap: wrap;
@@ -158,7 +158,7 @@
         <div class="ui-panel">
             <div class="stats">
                 <div class="stat"><span>💰</span> <span id="money">1500</span></div>
-                <div class="stat"><span>🧺</span> <span id="harvestInventory">0</span></div>
+                <div class="stat"><span>🌾</span> <span id="harvestTotal">0</span></div>
                 <div class="stat"><span>🚜</span> <span id="vehicleName">Пешком</span></div>
             </div>
             <div class="inventory">
@@ -167,13 +167,13 @@
             <div class="location-badge" id="locationDisplay">
                 🌾 ФЕРМА
             </div>
-            <div class="shop">
+            <div class="shop-buttons">
                 <button id="buyTractorBtn">🚜 Трактор (1800💰)</button>
                 <button id="buyCombineBtn">🌾 Комбайн (4500💰)</button>
                 <button id="buyLandBtn">🌱 Купить поле (1200💰)</button>
             </div>
             <div class="vehicle-status" id="vehicleStatusMsg">▶ Режим: пешком (WASD)</div>
-            <div class="controls-info">🕹️ WASD — движение | Пробел/ПКМ — сесть/выйти | 🌟 Желтая звезда — переход в магазин | 🏪 В магазине нажмите E для продажи!</div>
+            <div class="controls-info">🕹️ WASD — движение | Пробел/ПКМ — сесть/выйти | Enter — переход между локациями | В магазине E — продажа</div>
         </div>
     </div>
 </div>
@@ -183,7 +183,7 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
 
-        // ЛОКАЦИИ: 'farm' или 'shop'
+        // ЛОКАЦИИ
         let currentLocation = 'farm';
         
         // Игровые параметры
@@ -200,21 +200,19 @@
         // Игрок
         let player = { x: 500, y: 300, radius: 16 };
         
-        // ПОЛЯ (прямоугольные!)
+        // ПОЛЯ (прямоугольные)
         let fields = [];
         
-        // Точка перехода между локациями (на ферме)
-        const farmPortal = { x: 950, y: 550, radius: 35, label: "→ МАГАЗИН" };
-        // Точка возврата из магазина на ферму
-        const shopPortal = { x: 50, y: 550, radius: 35, label: "← НА ФЕРМУ" };
+        // Точки перехода
+        const farmPortal = { x: 950, y: 550, radius: 35 };
+        const shopPortal = { x: 50, y: 550, radius: 35 };
         
         // Магазин (в локации shop)
-        const shopKeeper = { x: 500, y: 300, radius: 45, name: "ПРОДАВЕЦ" };
+        const shopKeeper = { x: 500, y: 300, radius: 45 };
         
         // ИНИЦИАЛИЗАЦИЯ ПРЯМОУГОЛЬНЫХ ПОЛЕЙ
         function initFields() {
             fields = [];
-            // Первое поле - прямоугольное, большое
             fields.push({
                 id: 0,
                 x: 300, y: 450,
@@ -224,7 +222,6 @@
                 ready: false,
                 lastUpdate: Date.now()
             });
-            // Второе поле рядом
             fields.push({
                 id: 1,
                 x: 550, y: 420,
@@ -237,7 +234,7 @@
             ownedFieldCount = 2;
         }
         
-        // Покупка нового поля (прямоугольного)
+        // Покупка нового поля
         function addNewField() {
             if (money < 1200) {
                 alert("Не хватает монет! Нужно 1200💰");
@@ -262,7 +259,6 @@
                         break;
                     }
                 }
-                // Не пересекаться с порталом
                 if (Math.abs(farmPortal.x - (newX + newW/2)) < (farmPortal.radius + Math.max(newW, newH)/2 + 20)) ok = false;
                 if (ok) placed = true;
                 attempts++;
@@ -292,7 +288,7 @@
             return true;
         }
         
-        // Рост урожая на полях
+        // Рост урожая
         let lastGrowthTick = Date.now();
         function updateGrowth() {
             if (currentLocation !== 'farm') return;
@@ -315,7 +311,7 @@
             }
         }
         
-        // СБОР УРОЖАЯ (только на ферме)
+        // СБОР УРОЖАЯ
         function harvestField(field) {
             if (!field.ready) return false;
             
@@ -336,10 +332,10 @@
             return true;
         }
         
-        // ПРОДАЖА в магазине
+        // ПРОДАЖА
         function sellHarvest() {
             if (inventory <= 0) {
-                alert("🌾 У вас нет урожая для продажи! Соберите урожай на ферме и приходите.");
+                alert("🌾 У вас нет урожая для продажи!");
                 return false;
             }
             
@@ -352,7 +348,7 @@
             const totalEarn = inventory * pricePerUnit;
             money += totalEarn;
             
-            alert(`💰 ПРОДАЖА! 💰\nПродано: ${inventory} ед. урожая\nЦена: ${pricePerUnit}💰 за ед.\nВыручка: ${totalEarn}💰\nБаланс: ${money}💰`);
+            alert(`💰 ПРОДАЖА! 💰\nПродано: ${inventory} ед.\nЦена: ${pricePerUnit}💰\nВыручка: ${totalEarn}💰\nБаланс: ${money}💰`);
             
             inventory = 0;
             updateUI();
@@ -365,7 +361,7 @@
                 hasTractor = true;
                 money -= 1800;
                 updateUI();
-                alert("🚜 Трактор куплен! Находится на ферме (слева внизу). Садитесь - собирает x2 урожая!");
+                alert("🚜 Трактор куплен! На ферме слева внизу.");
                 return true;
             } else if (hasTractor) {
                 alert("У вас уже есть трактор!");
@@ -381,7 +377,7 @@
                 hasCombine = true;
                 money -= 4500;
                 updateUI();
-                alert("🌾 Комбайн куплен! Находится на ферме (справа внизу). Собирает x4 урожая, высокая цена продажи!");
+                alert("🌾 Комбайн куплен! На ферме справа внизу.");
                 return true;
             } else if (hasCombine) {
                 alert("Комбайн уже ваш!");
@@ -395,16 +391,16 @@
         // Смена локации
         function changeLocation() {
             if (currentLocation === 'farm') {
-                // Проверяем, стоит ли игрок на портале
                 const distToPortal = Math.hypot(player.x - farmPortal.x, player.y - farmPortal.y);
                 if (distToPortal < (player.radius + farmPortal.radius)) {
                     currentLocation = 'shop';
-                    // Устанавливаем позицию в магазине (у портала возврата)
                     player.x = shopPortal.x;
                     player.y = shopPortal.y - 20;
                     document.getElementById("locationDisplay").innerHTML = "🏪 МАГАЗИН";
                     updateUI();
                     return true;
+                } else {
+                    alert("Подойдите к золотой звезде в правом нижнем углу, чтобы перейти в магазин!");
                 }
             } else if (currentLocation === 'shop') {
                 const distToPortal = Math.hypot(player.x - shopPortal.x, player.y - shopPortal.y);
@@ -415,12 +411,14 @@
                     document.getElementById("locationDisplay").innerHTML = "🌾 ФЕРМА";
                     updateUI();
                     return true;
+                } else {
+                    alert("Подойдите к зеленой звезде в левом нижнем углу, чтобы вернуться на ферму!");
                 }
             }
             return false;
         }
         
-        // Сесть/выйти из техники (только на ферме)
+        // Сесть/выйти из техники
         function tryEnterVehicle() {
             if (currentLocation !== 'farm') {
                 alert("Техника только на ферме!");
@@ -444,12 +442,12 @@
             if (nearTractor) {
                 currentVehicle = 1;
                 player.radius = 22;
-                document.getElementById("vehicleStatusMsg").innerHTML = "🚜 Режим: ТРАКТОР (скорость +, урожай x2)";
+                document.getElementById("vehicleStatusMsg").innerHTML = "🚜 Режим: ТРАКТОР";
                 updateUI();
             } else if (nearCombine) {
                 currentVehicle = 2;
                 player.radius = 27;
-                document.getElementById("vehicleStatusMsg").innerHTML = "🌾 Режим: КОМБАЙН (скорость ++, урожай x4, цена выше)";
+                document.getElementById("vehicleStatusMsg").innerHTML = "🌾 Режим: КОМБАЙН";
                 updateUI();
             } else {
                 alert("Подойдите к технике на ферме! 🚜 слева внизу, 🌾 справа внизу");
@@ -487,10 +485,9 @@
             player.x = newX;
             player.y = newY;
             
-            // СБОР УРОЖАЯ только на ферме
+            // СБОР УРОЖАЯ
             if (currentLocation === 'farm') {
                 for (let field of fields) {
-                    // Проверка попадания в прямоугольное поле
                     const left = field.x - field.width/2;
                     const right = field.x + field.width/2;
                     const top = field.y - field.height/2;
@@ -505,7 +502,7 @@
             }
         }
         
-        // ОТРИСОВКА в зависимости от локации
+        // ОТРИСОВКА
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
@@ -517,11 +514,10 @@
         }
         
         function drawFarm() {
-            // Земля
+            // Фон
             ctx.fillStyle = "#5f8b4c";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            // Трава
             for(let i=0;i<100;i++) {
                 ctx.fillStyle = "#7ca55a";
                 ctx.beginPath();
@@ -529,12 +525,11 @@
                 ctx.fill();
             }
             
-            // ПРЯМОУГОЛЬНЫЕ ПОЛЯ
+            // ПОЛЯ
             for (let field of fields) {
                 const left = field.x - field.width/2;
                 const top = field.y - field.height/2;
                 
-                // Градиент для поля
                 const grad = ctx.createLinearGradient(left, top, left + field.width, top + field.height);
                 grad.addColorStop(0, "#b9d48b");
                 grad.addColorStop(1, "#7fa545");
@@ -545,7 +540,6 @@
                 ctx.lineWidth = 3;
                 ctx.strokeRect(left, top, field.width, field.height);
                 
-                // Процент роста
                 ctx.font = "bold 16px 'Segoe UI'";
                 ctx.fillStyle = "#2c2b1a";
                 ctx.fillText(`${Math.floor(field.growth)}%`, field.x - 25, field.y - field.height/2 - 8);
@@ -558,7 +552,6 @@
                     ctx.shadowBlur = 0;
                 }
                 
-                // Рисуем пшеницу
                 ctx.fillStyle = "#e3b138";
                 for(let i = 0; i < 12; i++) {
                     let xOff = (Math.random() - 0.5) * field.width * 0.7;
@@ -597,7 +590,7 @@
                 ctx.fillText("КОМБАЙН", 872, 526);
             }
             
-            // Портал в магазин
+            // Портал
             ctx.fillStyle = "#ffcc44";
             ctx.shadowBlur = 10;
             ctx.beginPath();
@@ -611,21 +604,18 @@
             ctx.fillText("В МАГАЗИН", farmPortal.x-38, farmPortal.y-12);
             ctx.shadowBlur = 0;
             
-            // Игрок
             drawPlayer();
             
-            // Инфо
             ctx.font = "bold 14px monospace";
             ctx.fillStyle = "#faf0cf";
             ctx.fillText(`Полей: ${ownedFieldCount}`, 20, 35);
         }
         
         function drawShop() {
-            // Интерьер магазина
+            // Магазин
             ctx.fillStyle = "#c9ae7a";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            // Пол
             ctx.fillStyle = "#b38f5a";
             for(let i = 0; i < 30; i++) {
                 ctx.fillRect(0, i*60, canvas.width, 2);
@@ -669,7 +659,7 @@
             ctx.fillText("С трактором: 55💰/ед", 430, 330);
             ctx.fillText("С комбайном: 72💰/ед", 430, 355);
             
-            // Портальный выход
+            // Портал назад
             ctx.fillStyle = "#44cc88";
             ctx.shadowBlur = 8;
             ctx.beginPath();
@@ -683,10 +673,8 @@
             ctx.fillText("НА ФЕРМУ", shopPortal.x-38, shopPortal.y-12);
             ctx.shadowBlur = 0;
             
-            // Игрок
             drawPlayer();
             
-            // Подсказка
             ctx.font = "bold 16px monospace";
             ctx.fillStyle = "#ffdd99";
             ctx.fillText("💡 Нажми E, чтобы продать урожай!", 360, 470);
@@ -739,20 +727,17 @@
         
         function updateUI() {
             document.getElementById("money").innerText = Math.floor(money);
-            document.getElementById("harvestInventory").innerText = totalHarvested;
+            document.getElementById("harvestTotal").innerText = totalHarvested;
             document.getElementById("inventoryCount").innerText = inventory;
             let vehicleText = currentVehicle === 0 ? "Пешком" : (currentVehicle === 1 ? "Трактор" : "Комбайн");
             document.getElementById("vehicleName").innerText = vehicleText;
             
-            const buyTractorBtn = document.getElementById("buyTractorBtn");
-            const buyCombineBtn = document.getElementById("buyCombineBtn");
-            const buyLandBtn = document.getElementById("buyLandBtn");
-            buyTractorBtn.disabled = hasTractor || money < 1800;
-            buyCombineBtn.disabled = hasCombine || money < 4500;
-            buyLandBtn.disabled = money < 1200;
+            document.getElementById("buyTractorBtn").disabled = hasTractor || money < 1800;
+            document.getElementById("buyCombineBtn").disabled = hasCombine || money < 4500;
+            document.getElementById("buyLandBtn").disabled = money < 1200;
         }
         
-        // Обработка продажи в магазине
+        // Продажа в магазине
         function handleSell() {
             if (currentLocation === 'shop') {
                 const distToSeller = Math.hypot(player.x - shopKeeper.x, player.y - shopKeeper.y);
@@ -762,7 +747,7 @@
                     alert("Подойдите ближе к продавцу!");
                 }
             } else {
-                alert("Продажа только в магазине! Подойдите к золотой звезде на ферме, чтобы перейти.");
+                alert("Продажа только в магазине! Перейдите через золотую звезду (Enter)");
             }
         }
         
@@ -829,7 +814,6 @@
         window.addEventListener('keydown', handleKeyDown);
         window.addEventListener('keyup', handleKeyUp);
         
-        // Кнопки
         document.getElementById("buyTractorBtn").addEventListener("click", () => { buyTractor(); updateUI(); });
         document.getElementById("buyCombineBtn").addEventListener("click", () => { buyCombine(); updateUI(); });
         document.getElementById("buyLandBtn").addEventListener("click", () => { addNewField(); updateUI(); });
