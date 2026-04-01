@@ -1,3 +1,6 @@
+Вы абсолютно правы! В предыдущем коде была ошибка с отображением. Вот полностью исправленная версия с персонажем, полями и всем функционалом:
+
+```html
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -164,6 +167,12 @@
             font-size: 0.7rem;
         }
 
+        .shop-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
         @media (max-width: 900px) {
             .sidebar { width: 100%; order: 2; }
             .game-wrapper { flex-direction: column; }
@@ -193,9 +202,14 @@
     <div class="sidebar">
         <h3>🏪 МАГАЗИН УЛУЧШЕНИЙ</h3>
         <div id="upgradesList"></div>
-        <div class="achievement" id="achievements">
+        <div class="achievement">
             <strong>🏆 ДОСТИЖЕНИЯ</strong>
             <div id="achievementsList"></div>
+        </div>
+        <div class="shop-buttons" style="margin-top: 15px;">
+            <button id="buyTractorBtn">🚜 Трактор (1800💰)</button>
+            <button id="buyCombineBtn">🌾 Комбайн (5000💰)</button>
+            <button id="buyLandBtn">🌱 Поле (1000💰)</button>
         </div>
     </div>
 </div>
@@ -210,7 +224,7 @@
         let money = 2000;
         let totalHarvested = 0;
         let inventory = 0;
-        let ownedFieldCount = 2;
+        let ownedFieldCount = 3;
         let playerLevel = 1;
         let levelExp = 0;
         
@@ -246,23 +260,26 @@
         const shopKeeper = { x: 500, y: 300, radius: 45 };
         
         // Система дней/времени
-        let dayTime = 0; // 0-100 (утро-вечер)
+        let dayTime = 0;
         let dayCount = 1;
+        
+        // Всплывающие тексты
+        let floatingTexts = [];
         
         // ========== ИНИЦИАЛИЗАЦИЯ ==========
         function initFields() {
             fields = [];
             fields.push({
                 id: 0, x: 280, y: 450, width: 170, height: 115,
-                growth: 60, ready: false, lastUpdate: Date.now(), seedType: 'wheat'
+                growth: 60, ready: false, lastUpdate: Date.now()
             });
             fields.push({
                 id: 1, x: 520, y: 430, width: 150, height: 100,
-                growth: 40, ready: false, lastUpdate: Date.now(), seedType: 'wheat'
+                growth: 40, ready: false, lastUpdate: Date.now()
             });
             fields.push({
                 id: 2, x: 750, y: 480, width: 140, height: 95,
-                growth: 20, ready: false, lastUpdate: Date.now(), seedType: 'wheat'
+                growth: 20, ready: false, lastUpdate: Date.now()
             });
             ownedFieldCount = 3;
         }
@@ -296,7 +313,7 @@
             
             fields.push({
                 id: Date.now(), x: newX, y: newY, width: newW, height: newH,
-                growth: 0, ready: false, lastUpdate: Date.now(), seedType: 'wheat'
+                growth: 0, ready: false, lastUpdate: Date.now()
             });
             
             money -= 1000;
@@ -306,7 +323,7 @@
             return true;
         }
         
-        // Рост урожая с учётом улучшений
+        // Рост урожая
         let lastGrowthTick = Date.now();
         function updateGrowth() {
             if (currentLocation !== 'farm') return;
@@ -316,14 +333,12 @@
             if (delta < 0.02) return;
             lastGrowthTick = now;
             
-            // Смена времени суток
             dayTime = (dayTime + delta * 5) % 100;
             if (dayTime < delta * 5) dayCount++;
             
             for (let field of fields) {
                 if (field.growth < 100) {
                     let baseGrowth = 4.5 * delta;
-                    // Бонус от лейки
                     if (upgrades.wateringCan.level > 0) {
                         baseGrowth *= (1 + (upgrades.wateringCan.level * 0.15));
                     }
@@ -337,7 +352,7 @@
             }
         }
         
-        // СБОР УРОЖАЯ с бонусами
+        // СБОР УРОЖАЯ
         function harvestField(field) {
             if (!field.ready) return false;
             
@@ -345,14 +360,10 @@
             if (currentVehicle === 1) baseAmount = 2;
             if (currentVehicle === 2) baseAmount = 4;
             
-            // Бонус от удобрений
             let fertBonus = 1 + (upgrades.fertilizer.level * 0.3);
             baseAmount = Math.floor(baseAmount * fertBonus);
-            
-            // Бонус от количества полей
             baseAmount = Math.floor(baseAmount * (1 + (ownedFieldCount-1) * 0.1));
             
-            // Шанс двойного сбора от автосбора
             let autoBonus = 1;
             if (upgrades.autoScoop.level > 0) {
                 let chance = upgrades.autoScoop.level * 0.25;
@@ -364,7 +375,6 @@
             inventory += harvestAmount;
             totalHarvested += harvestAmount;
             
-            // Опыт за сбор
             let expGain = Math.floor(harvestAmount * 2);
             addExperience(expGain);
             
@@ -372,6 +382,7 @@
             field.ready = false;
             field.lastUpdate = Date.now();
             
+            showFloatingText(`+${harvestAmount}🌾`, field.x, field.y - 30);
             checkAchievements();
             updateUI();
             return true;
@@ -385,7 +396,7 @@
                 levelExp -= expNeeded;
                 playerLevel++;
                 money += playerLevel * 100;
-                alert(`🎉 УРОВЕНЬ ${playerLevel} ДОСТИГНУТ! 🎉\nПолучено ${playerLevel * 100}💰 бонуса!`);
+                showFloatingText(`⭐ УРОВЕНЬ ${playerLevel}! +${playerLevel * 100}💰`, 500, 200);
             }
             updateUI();
         }
@@ -401,15 +412,12 @@
             if (currentVehicle === 1) pricePerUnit = 60;
             if (currentVehicle === 2) pricePerUnit = 80;
             
-            // Бонус за уровень
             pricePerUnit = Math.floor(pricePerUnit * (1 + (playerLevel-1) * 0.05));
-            // Бонус за количество полей
             pricePerUnit = Math.floor(pricePerUnit * (1 + (ownedFieldCount-1) * 0.03));
             
             const totalEarn = inventory * pricePerUnit;
             money += totalEarn;
             
-            // Анимация сообщения
             showFloatingText(`+${totalEarn}💰`, shopKeeper.x, shopKeeper.y - 40);
             
             inventory = 0;
@@ -428,7 +436,7 @@
                 money -= cost;
                 up.level++;
                 updateUI();
-                alert(`✨ ${up.name} улучшен до ${up.level} уровня! ✨\n${up.desc}`);
+                showFloatingText(`✨ ${up.name} Lv.${up.level}!`, 500, 300);
                 renderUpgrades();
             } else {
                 alert(`Не хватает ${cost}💰 для улучшения!`);
@@ -441,7 +449,7 @@
                 hasTractor = true;
                 money -= 1800;
                 updateUI();
-                alert("🚜 Трактор куплен! Собирает x2 урожая, быстрее передвижение!");
+                alert("🚜 Трактор куплен! Находится на ферме (слева внизу)");
                 checkAchievements();
                 return true;
             } else if (hasTractor) {
@@ -458,7 +466,7 @@
                 hasCombine = true;
                 money -= 5000;
                 updateUI();
-                alert("🌾 КОМБАЙН! Собирает x4 урожая, максимальная скорость, +20% к цене продажи!");
+                alert("🌾 КОМБАЙН! Находится на ферме (справа внизу)");
                 checkAchievements();
                 return true;
             } else if (hasCombine) {
@@ -477,32 +485,30 @@
                 achievements.firstHarvest = true;
                 money += 500;
                 newAchieve = true;
-                showFloatingText("🏆 Достижение: Первый урожай! +500💰", 500, 200);
+                showFloatingText("🏆 Первый урожай! +500💰", 500, 200);
             }
             if (!achievements.millionaire && money >= 10000) {
                 achievements.millionaire = true;
                 money += 2000;
                 newAchieve = true;
-                showFloatingText("🏆 Достижение: Миллионер! +2000💰", 500, 200);
+                showFloatingText("🏆 Миллионер! +2000💰", 500, 200);
             }
             if (!achievements.landOwner && ownedFieldCount >= 6) {
                 achievements.landOwner = true;
                 money += 1500;
                 newAchieve = true;
-                showFloatingText("🏆 Достижение: Землевладелец! +1500💰", 500, 200);
+                showFloatingText("🏆 Землевладелец! +1500💰", 500, 200);
             }
             if (!achievements.mechanic && hasTractor && hasCombine) {
                 achievements.mechanic = true;
                 money += 1000;
                 newAchieve = true;
-                showFloatingText("🏆 Достижение: Механик! +1000💰", 500, 200);
+                showFloatingText("🏆 Механик! +1000💰", 500, 200);
             }
             if (newAchieve) updateUI();
             renderAchievements();
         }
         
-        // Всплывающий текст
-        let floatingTexts = [];
         function showFloatingText(text, x, y) {
             floatingTexts.push({ text, x, y, life: 1.0 });
         }
@@ -618,12 +624,11 @@
             floatingTexts = floatingTexts.filter(t => t.life > 0);
         }
         
-        // Отрисовка
+        // ОТРИСОВКА
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
-            // Небо/время суток
-            let skyColor = `rgba(100, 150, 200, ${0.3 + Math.sin(dayTime * 0.03) * 0.2})`;
+            // Фон
             ctx.fillStyle = "#5f8b4c";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
@@ -650,25 +655,26 @@
                 ctx.fillStyle = color;
                 ctx.fillRect(left, top, field.width, field.height);
                 ctx.strokeStyle = "#4a6730";
-                ctx.lineWidth = 2;
+                ctx.lineWidth = 3;
                 ctx.strokeRect(left, top, field.width, field.height);
                 
-                ctx.font = "bold 14px 'Segoe UI'";
+                // Процент роста
+                ctx.font = "bold 16px 'Segoe UI'";
                 ctx.fillStyle = "#2c2b1a";
-                ctx.fillText(`${Math.floor(field.growth)}%`, field.x - 20, field.y - field.height/2 - 5);
+                ctx.fillText(`${Math.floor(field.growth)}%`, field.x - 25, field.y - field.height/2 - 8);
                 
                 if (field.ready) {
                     ctx.font = "20px sans-serif";
                     ctx.fillStyle = "#ffaa44";
-                    ctx.fillText("🌾", field.x - 12, field.y - 12);
+                    ctx.fillText("🌾 ГОТОВО!", field.x - 45, field.y - 20);
                 }
                 
                 // Пшеница
                 ctx.fillStyle = "#e3b138";
-                for(let i = 0; i < 8; i++) {
-                    let xOff = (Math.sin(i * 1.2) * 12);
-                    let yOff = (Math.cos(i * 0.9) * 8);
-                    ctx.fillRect(field.x + xOff - 2, field.y + yOff - 2, 2, 6);
+                for(let i = 0; i < 12; i++) {
+                    let xOff = (Math.sin(i * 1.2) * 12) + (Math.random() - 0.5) * 15;
+                    let yOff = (Math.cos(i * 0.9) * 8) + (Math.random() - 0.5) * 10;
+                    ctx.fillRect(field.x + xOff - 2, field.y + yOff - 2, 3, 7);
                 }
             }
             
@@ -678,11 +684,13 @@
                 ctx.beginPath();
                 ctx.ellipse(100, 550, 24, 30, 0, 0, Math.PI*2);
                 ctx.fill();
+                ctx.fillStyle = "#a5522a";
+                ctx.fillRect(85, 537, 30, 20);
                 ctx.font = "28px sans-serif";
                 ctx.fillStyle = "white";
                 ctx.fillText("🚜", 88, 548);
                 ctx.fillStyle = "#fbe69e";
-                ctx.font = "bold 10px";
+                ctx.font = "bold 12px";
                 ctx.fillText("ТРАКТОР", 70, 530);
             }
             if (hasCombine) {
@@ -690,28 +698,35 @@
                 ctx.beginPath();
                 ctx.ellipse(900, 550, 30, 34, 0, 0, Math.PI*2);
                 ctx.fill();
+                ctx.fillStyle = "#8b5a2a";
+                ctx.fillRect(877, 536, 46, 26);
                 ctx.font = "30px sans-serif";
                 ctx.fillStyle = "white";
                 ctx.fillText("🌾", 887, 548);
                 ctx.fillStyle = "#ffefb9";
+                ctx.font = "bold 11px";
                 ctx.fillText("КОМБАЙН", 872, 526);
             }
             
             // Портал
             ctx.fillStyle = "#ffcc44";
+            ctx.shadowBlur = 8;
             ctx.beginPath();
             ctx.arc(farmPortal.x, farmPortal.y, farmPortal.radius, 0, Math.PI*2);
             ctx.fill();
             ctx.fillStyle = "#b8860b";
-            ctx.font = "20px sans-serif";
-            ctx.fillText("🌟", farmPortal.x-10, farmPortal.y+8);
+            ctx.font = "24px sans-serif";
+            ctx.fillText("🌟", farmPortal.x-12, farmPortal.y+8);
             ctx.fillStyle = "#ffef99";
-            ctx.font = "10px monospace";
-            ctx.fillText("В МАГАЗИН", farmPortal.x-38, farmPortal.y-12);
+            ctx.font = "12px monospace";
+            ctx.fillText("В МАГАЗИН", farmPortal.x-42, farmPortal.y-15);
+            ctx.shadowBlur = 0;
             
+            // Игрок
             drawPlayer();
             
-            ctx.font = "bold 12px monospace";
+            // Информация
+            ctx.font = "bold 14px monospace";
             ctx.fillStyle = "#faf0cf";
             ctx.fillText(`🌾 Полей: ${ownedFieldCount}`, 15, 30);
             ctx.fillText(`⭐ Уровень ${playerLevel}`, 15, 55);
@@ -720,10 +735,10 @@
         }
         
         function drawShop() {
+            // Магазин
             ctx.fillStyle = "#c9ae7a";
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             
-            // Пол
             ctx.fillStyle = "#b38f5a";
             for(let i = 0; i < 30; i++) ctx.fillRect(0, i*60, canvas.width, 2);
             
@@ -742,6 +757,8 @@
             ctx.beginPath();
             ctx.arc(shopKeeper.x-8, shopKeeper.y-8, 6, 0, Math.PI*2);
             ctx.fill();
+            ctx.fillStyle = "#2c2b1a";
+            ctx.fillRect(shopKeeper.x-12, shopKeeper.y+8, 24, 12);
             ctx.font = "32px sans-serif";
             ctx.fillStyle = "#ffffff";
             ctx.fillText("👨‍🌾", shopKeeper.x-18, shopKeeper.y-6);
@@ -750,50 +767,62 @@
             ctx.fillStyle = "#f5c542";
             ctx.fillRect(380, 130, 240, 45);
             ctx.fillStyle = "#8b4513";
-            ctx.font = "bold 26px 'Segoe UI'";
+            ctx.font = "bold 28px 'Segoe UI'";
             ctx.fillText("🏪 МАГАЗИН", 420, 165);
             
-            // Инфо о ценах
-            ctx.fillStyle = "#2c2b1a";
-            ctx.font = "bold 16px monospace";
-            ctx.fillText("ПРИЕМ УРОЖАЯ", 430, 270);
-            ctx.font = "12px monospace";
-            ctx.fillStyle = "#1e2a1c";
+            // Цены
             let price = 45 + (currentVehicle === 1 ? 15 : 0) + (currentVehicle === 2 ? 35 : 0);
             price = Math.floor(price * (1 + (playerLevel-1) * 0.05));
-            ctx.fillText(`Текущая цена: ${price}💰/ед`, 440, 305);
+            ctx.fillStyle = "#2c2b1a";
+            ctx.font = "bold 18px monospace";
+            ctx.fillText("ПРИЕМ УРОЖАЯ", 420, 270);
+            ctx.font = "14px monospace";
+            ctx.fillStyle = "#1e2a1c";
+            ctx.fillText(`Текущая цена: ${price}💰/ед`, 440, 310);
+            ctx.fillText(`Бонус за уровень: +${(playerLevel-1)*5}%`, 440, 340);
             
             // Портал назад
             ctx.fillStyle = "#44cc88";
+            ctx.shadowBlur = 8;
             ctx.beginPath();
             ctx.arc(shopPortal.x, shopPortal.y, shopPortal.radius, 0, Math.PI*2);
             ctx.fill();
             ctx.fillStyle = "#2c6e3a";
-            ctx.font = "20px sans-serif";
-            ctx.fillText("🌾", shopPortal.x-8, shopPortal.y+6);
+            ctx.font = "24px sans-serif";
+            ctx.fillText("🌾", shopPortal.x-12, shopPortal.y+8);
             ctx.fillStyle = "#cfffc0";
-            ctx.font = "10px monospace";
-            ctx.fillText("НА ФЕРМУ", shopPortal.x-38, shopPortal.y-12);
+            ctx.font = "12px monospace";
+            ctx.fillText("НА ФЕРМУ", shopPortal.x-42, shopPortal.y-15);
+            ctx.shadowBlur = 0;
             
+            // Игрок
             drawPlayer();
             
-            ctx.font = "bold 14px monospace";
+            // Подсказка
+            ctx.font = "bold 16px monospace";
             ctx.fillStyle = "#ffdd99";
             ctx.fillText("💡 Нажми E рядом с продавцом!", 380, 470);
             
             if (inventory > 0) {
                 ctx.fillStyle = "#ffaa33";
-                ctx.font = "bold 22px sans-serif";
-                ctx.fillText(`📦 ${inventory} ед.`, 450, 540);
+                ctx.font = "bold 26px sans-serif";
+                ctx.fillText(`📦 Урожая: ${inventory} ед.`, 420, 540);
             }
         }
         
         function drawPlayer() {
+            ctx.shadowBlur = 4;
             if (currentVehicle === 0) {
                 ctx.fillStyle = "#5a7cb0";
                 ctx.beginPath();
                 ctx.arc(player.x, player.y, 14, 0, Math.PI*2);
                 ctx.fill();
+                ctx.fillStyle = "#f9e0a0";
+                ctx.beginPath();
+                ctx.arc(player.x-3, player.y-4, 3.5, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = "#3a2e1a";
+                ctx.fillRect(player.x-8, player.y+4, 16, 8);
                 ctx.font = "24px sans-serif";
                 ctx.fillStyle = "#ffeeca";
                 ctx.fillText("🧑", player.x-10, player.y-7);
@@ -802,16 +831,22 @@
                 ctx.beginPath();
                 ctx.ellipse(player.x, player.y, 21, 26, 0, 0, Math.PI*2);
                 ctx.fill();
+                ctx.fillStyle = "#bc6b2a";
+                ctx.fillRect(player.x-17, player.y-6, 34, 14);
                 ctx.font = "28px sans-serif";
+                ctx.fillStyle = "black";
                 ctx.fillText("🚜", player.x-14, player.y+9);
             } else {
                 ctx.fillStyle = "#d99e3a";
                 ctx.beginPath();
                 ctx.ellipse(player.x, player.y, 26, 30, 0, 0, Math.PI*2);
                 ctx.fill();
+                ctx.fillStyle = "#bd7a2a";
+                ctx.fillRect(player.x-20, player.y-4, 40, 14);
                 ctx.font = "32px sans-serif";
                 ctx.fillText("🌾", player.x-17, player.y+9);
             }
+            ctx.shadowBlur = 0;
         }
         
         function renderUpgrades() {
@@ -847,7 +882,6 @@
             document.getElementById("inventoryCount").innerText = inventory;
             let vehicleText = currentVehicle === 0 ? "Пешком" : (currentVehicle === 1 ? "Трактор" : "Комбайн");
             document.getElementById("vehicleName").innerText = vehicleText;
-            document.getElementById("vehicleStatusMsg").innerHTML = currentVehicle === 0 ? "▶ Пешком" : (currentVehicle === 1 ? "🚜 ТРАКТОР" : "🌾 КОМБАЙН");
         }
         
         function handleSell() {
@@ -898,22 +932,9 @@
         window.addEventListener('keydown', handleKeyDown);
         window.addEventListener('keyup', handleKeyUp);
         
-        document.getElementById("buyTractorBtn")?.addEventListener("click", () => { buyTractor(); updateUI(); });
-        document.getElementById("buyCombineBtn")?.addEventListener("click", () => { buyCombine(); updateUI(); });
-        document.getElementById("buyLandBtn")?.addEventListener("click", () => { addNewField(); updateUI(); });
-        
-        // Добавляем кнопки в DOM
-        const shopDiv = document.querySelector('.shop-buttons');
-        if (shopDiv) {
-            shopDiv.innerHTML = `
-                <button id="buyTractorBtn">🚜 Трактор (1800💰)</button>
-                <button id="buyCombineBtn">🌾 Комбайн (5000💰)</button>
-                <button id="buyLandBtn">🌱 Купить поле (1000💰)</button>
-            `;
-            document.getElementById("buyTractorBtn").addEventListener("click", () => { buyTractor(); updateUI(); });
-            document.getElementById("buyCombineBtn").addEventListener("click", () => { buyCombine(); updateUI(); });
-            document.getElementById("buyLandBtn").addEventListener("click", () => { addNewField(); updateUI(); });
-        }
+        document.getElementById("buyTractorBtn").addEventListener("click", () => { buyTractor(); updateUI(); });
+        document.getElementById("buyCombineBtn").addEventListener("click", () => { buyCombine(); updateUI(); });
+        document.getElementById("buyLandBtn").addEventListener("click", () => { addNewField(); updateUI(); });
         
         initFields();
         renderUpgrades();
@@ -921,9 +942,9 @@
         updateUI();
         lastGrowthTick = Date.now();
         
-        function gameLoop() {
-            let now = performance.now();
-            let delta = Math.min(0.033, (now - (lastFrame || now)) / 1000);
+        let lastFrame = performance.now();
+        function gameLoop(now) {
+            let delta = Math.min(0.033, (now - lastFrame) / 1000);
             if (delta > 0.001) {
                 updateGrowth();
                 updateMovement(delta);
@@ -933,9 +954,9 @@
             requestAnimationFrame(gameLoop);
         }
         
-        let lastFrame = performance.now();
-        gameLoop();
+        requestAnimationFrame(gameLoop);
     })();
 </script>
 </body>
 </html>
+```
